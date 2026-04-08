@@ -18,7 +18,7 @@ Hello!
 ## Section Two
 
 ```{r student2}
-#Hello my name is graciee
+#Hello my name is gracieee
 ```
 
 ## Section Three
