@@ -24,7 +24,7 @@ Hello!
 ## Section Three
 
 ```{r student3}
-#Kylee Dahlstrom HI! 
+#Kylee Dahlstrom HI
 ```
 
 
