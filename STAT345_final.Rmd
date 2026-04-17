@@ -14,48 +14,172 @@ library(rvest)
 library(stringr)
 library(dplyr)
 library(purrr)
+library(tibble)
+library(httr)
+library(jsonlite)
+
+GENIUS_TOKEN <- "OAvyoTTGQK7L7JgsblybHU6Leb1plm2ppXr2H60JqlNOPbDIYXD5pg0nVA2VO_pV"
 
 rap_songs <- read.csv("rap_songs.csv", stringsAsFactors = FALSE)
 
-clean_for_az <- function(x, type = c("artist", "title")) {
-  type <- match.arg(type)
-  x <- tolower(x)
-  x <- str_replace_all(x, "&", " and ")
-  x <- str_replace_all(x, "\\(.*?\\)|\\[.*?\\]", " ")
-  
-  if (type == "title") {
-    x <- str_replace(x, "\\s+(feat\\.?|ft\\.?|featuring|with)\\s+.*$", "")
-  }
-  
-  x <- str_replace_all(x, "[^a-z0-9]+", "")
+clean_text <- function(x) {
+  x <- enc2utf8(x)
+  x <- iconv(x, from = "UTF-8", to = "ASCII//TRANSLIT", sub = "")
+  x <- str_replace_all(x, "[“”]", "\"")
+  x <- str_replace_all(x, "[‘’]", "'")
+  x <- str_squish(x)
   x
 }
 
-build_az_url <- function(main_artist, title) {
-  artist_part <- clean_for_az(main_artist, "artist")
-  title_part <- clean_for_az(title, "title")
-  
-  paste0("https://www.azlyrics.com/lyrics/", artist_part, "/", title_part, ".html")
+search_genius_url <- function(main_artist, title, token = GENIUS_TOKEN) {
+  query <- paste(clean_text(main_artist), clean_text(title))
+
+  res <- GET(
+    url = "https://api.genius.com/search",
+    query = list(q = query),
+    add_headers(Authorization = paste("Bearer", token))
+  )
+
+  if (status_code(res) != 200) return(NA_character_)
+
+  txt <- content(res, as = "text", encoding = "UTF-8")
+  dat <- fromJSON(txt, flatten = TRUE)
+
+  hits <- dat$response$hits
+  if (length(hits) == 0 || nrow(hits) == 0) return(NA_character_)
+
+  artist_clean <- tolower(clean_text(main_artist))
+  title_clean  <- tolower(clean_text(title))
+
+  result_df <- tibble(
+    url = hits$result.url,
+    artist = tolower(clean_text(hits$result.primary_artist.name)),
+    song = tolower(clean_text(hits$result.title))
+  ) %>%
+    mutate(
+      artist_match = artist == artist_clean,
+      song_match = song == title_clean,
+      score = 2 * artist_match + 2 * song_match +
+              str_detect(song, fixed(title_clean)) +
+              str_detect(artist, fixed(artist_clean))
+    ) %>%
+    arrange(desc(score))
+
+  result_df$url[1]
 }
 
-get_lyrics_az <- function(main_artist, title) {
-  url <- build_az_url(main_artist, title)
-  
+get_lyrics_from_genius_url <- function(song_url) {
+  if (is.na(song_url) || song_url == "") return(NA_character_)
+
   page <- tryCatch(
-    read_html(url),
+    read_html(song_url),
     error = function(e) NULL
   )
-  
+
   if (is.null(page)) return(NA_character_)
-  
-  divs <- page %>% html_elements("div") %>% html_text()
-  divs <- divs[!str_detect(divs, "Submit Corrections|Writer|AZLyrics|Thanks to")]
-  divs <- divs[nchar(divs) > 100]
-  
-  if (length(divs) == 0) return(NA_character_)
-  
-  divs[which.max(nchar(divs))]
+
+  nodes <- html_elements(page, "[data-lyrics-container='true']")
+  if (length(nodes) == 0) return(NA_character_)
+
+  lyrics <- nodes %>%
+    html_text2() %>%
+    paste(collapse = "\n") %>%
+    str_replace_all("\\n{2,}", "\n") %>%
+    str_trim()
+
+  start_pos <- str_locate(lyrics, "\\[(Intro|Verse|Chorus|Hook|Bridge|Outro)")[1]
+
+  if (!is.na(start_pos)) {
+    lyrics <- str_sub(lyrics, start_pos)
+  }
+
+  lyrics <- str_trim(lyrics)
+
+  if (lyrics == "") return(NA_character_)
+  lyrics
 }
+
+clean_lyrics_text <- function(lyrics) {
+  if (is.na(lyrics) || lyrics == "") return(NA_character_)
+
+  lyrics <- lyrics %>%
+    str_replace_all("\r", "\n") %>%
+    str_replace_all("\\n{2,}", "\n") %>%
+    
+    str_replace_all("([a-z])([A-Z])", "\\1 \\2") %>%
+    
+    str_replace_all("([a-z0-9])\\[", "\\1\n[") %>%
+    
+    str_replace_all("\\]([A-Za-z])", "\\]\n\\1") %>%
+    
+    str_replace_all("[ \t]+", " ") %>%
+    str_trim()
+
+  lyrics
+}
+
+get_lyrics_genius_api <- function(main_artist, title, token = GENIUS_TOKEN) {
+  url <- search_genius_url(main_artist, title, token)
+  Sys.sleep(0.5)
+  get_lyrics_from_genius_url(url)
+}
+
+
+rap_songs <- rap_songs %>%
+  mutate(
+    lyrics = map2_chr(main_artist, title, ~ get_lyrics_genius_api(.x, .y)),
+    lyrics = map_chr(lyrics, clean_lyrics_text)
+  )
+write.csv(rap_songs, "rap_songs_with_lyrics.csv", row.names = FALSE)
+
+
+library(tidytext)
+data("stop_words")
+
+word_repetition_score <- function(lyrics) {
+  if (is.na(lyrics) || lyrics == "") return(NA_real_)
+
+  words <- lyrics %>%
+    tolower() %>%
+    str_replace_all("[^a-z0-9\\s']", " ") %>%
+    str_split("\\s+") %>%
+    unlist()
+
+  words <- words[words != ""]
+
+  words <- words[!words %in% stop_words$word]
+
+  if (length(words) == 0) return(NA_real_)
+
+  1 - (length(unique(words)) / length(words))
+}
+
+rap_songs <- rap_songs %>%
+  mutate(
+    word_repeat_score = map_dbl(lyrics, word_repetition_score)
+  )
+
+year_summary <- rap_songs %>%
+  group_by(year) %>%
+  summarise(
+    avg_word_repeat = mean(word_repeat_score, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+library(ggplot2)
+
+ggplot(year_summary, aes(x = year, y = avg_word_repeat)) +
+  geom_line() +
+  geom_point() +
+  labs(
+  title = "Word Repetition (Stopwords Removed) in Rap Songs Over Time",
+  x = "Year",
+  y = "Repetition Score"
+)
+
+
+
+
 ```
 
 ```{r}
