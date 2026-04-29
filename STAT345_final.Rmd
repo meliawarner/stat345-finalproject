@@ -9,28 +9,45 @@ date: "2026-04-15"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r, message=FALSE, warning=FALSE}
-# Rap Songs
+### Rap Songs Analysis
 
 ## Rap Setup
 
-library(rvest)
-library(stringr)
-library(dplyr)
-library(purrr)
-library(tibble)
-library(httr)
-library(jsonlite)
-library(ggplot2)
-library(tidytext)
+```{r rap_setup, message=FALSE, warning=FALSE}
+## Load required packages and dataset
+# Purpose: Ensure all packages needed are available and dataset (with lyrics) is loaded
+# Inputs: rap_songs_with_lyrics.csv (originally rap_songs.csv)
+# Outputs: rap_songs dataframe
 
+# Load libraries for scraping, cleaning, and analysis
+library(rvest)      # Web scraping
+library(stringr)    # String manipulation
+library(dplyr)      # Data manipulation
+library(purrr)      # Functional programming
+library(tibble)     # Data frame tools
+library(httr)       # API requests
+library(jsonlite)   # JSON parsing
+library(ggplot2)    # Visualization
+library(tidytext)   # Stop word dataset
+
+# Genius API token (I removed my personal token)
 GENIUS_TOKEN <- "PLACE_TOKEN_HERE"
 
+# Read in dataset for analysis
+# NOTE: Original dataset was "rap_songs.csv" (manually created with song info).
+# After collecting lyrics using the Genius API and expanding the dataset to include them, I saved the dataset as "rap_songs_with_lyrics.csv", and used this for all analysis steps.
 rap_songs <- read.csv("rap_songs_with_lyrics.csv", stringsAsFactors = FALSE)
+
 ```
 
-```{r, echo=FALSE}
-## Rap Lyrics Functions
+
+## Lyrics Cleaning
+
+```{r lyrics_cleaning}
+## Clean text for Genius API search
+# Purpose: Standardize artist and song title text before searching Genius
+# Inputs: Character string
+# Outputs: Cleaned text string
 
 clean_text <- function(x) {
   x %>%
@@ -40,29 +57,45 @@ clean_text <- function(x) {
     str_replace_all("[‘’]", "'") %>%
     str_squish()
 }
+```
 
-### Data Collection (ran once) 
+
+## Genius API Search
+
+```{r genius_search}
+## Search Genius for song URL
+# Purpose: Find the best matching Genius lyrics page for each song
+# Inputs: Artist name, song title, and Genius API token
+# Outputs: Genius URL for the best matching result
 
 search_genius_url <- function(main_artist, title, token = GENIUS_TOKEN) {
+  # Create search query using cleaned artist and title
   query <- paste(clean_text(main_artist), clean_text(title))
 
+  # Send request to Genius API
   res <- GET(
     url = "https://api.genius.com/search",
     query = list(q = query),
     add_headers(Authorization = paste("Bearer", token))
   )
 
+  # Return missing value if request is unsuccessful
   if (status_code(res) != 200) return(NA_character_)
 
+  # Convert API response from JSON into an R object
   txt <- content(res, as = "text", encoding = "UTF-8")
   dat <- fromJSON(txt, flatten = TRUE)
 
+  # Extract search results
   hits <- dat$response$hits
+  # Return missing value if no Genius results are found
   if (length(hits) == 0 || nrow(hits) == 0) return(NA_character_)
 
+  # Clean artist and title for comparison
   artist_clean <- tolower(clean_text(main_artist))
   title_clean  <- tolower(clean_text(title))
 
+  # Score results based on how closely they match artist and title
   result_df <- tibble(
     url = hits$result.url,
     artist = tolower(clean_text(hits$result.primary_artist.name)),
@@ -77,145 +110,279 @@ search_genius_url <- function(main_artist, title, token = GENIUS_TOKEN) {
     ) %>%
     arrange(desc(score))
 
+  # Return the highest-scoring Genius URL
   result_df$url[1]
 }
 
+```
+
+
+## Genius Lyric Scraping
+
+```{r genius_scraping}
+## Scrape lyrics from Genius URL
+# Purpose: Extract lyrics text from the selected Genius lyrics page
+# Inputs: Genius song URL
+# Outputs: Raw lyrics text
+
 get_lyrics_from_genius_url <- function(song_url) {
+  # Return missing value if URL is unavailable
   if (is.na(song_url) || song_url == "") return(NA_character_)
 
+  # Try to read webpage and return NULL if page cannot be read
   page <- tryCatch(
     read_html(song_url),
     error = function(e) NULL
   )
 
+  # Return missing value if webpage was not read successfully
   if (is.null(page)) return(NA_character_)
 
+  # Select lyrics containers from Genius page
   nodes <- html_elements(page, "[data-lyrics-container='true']")
   if (length(nodes) == 0) return(NA_character_)
 
+  # Combine lyrics text into one string
   lyrics <- nodes %>%
     html_text2() %>%
     paste(collapse = "\n") %>%
     str_replace_all("\\n{2,}", "\n") %>%
     str_trim()
 
+  # Find likely beginning of lyrics section
   start_pos <- str_locate(lyrics, "\\[(Intro|Verse|Chorus|Hook|Bridge|Outro)")[1]
 
+  # Remove extra text before lyrics begin, if found
   if (!is.na(start_pos)) {
     lyrics <- str_sub(lyrics, start_pos)
   }
 
   lyrics <- str_trim(lyrics)
 
+  # Return missing value if lyrics are empty
   if (lyrics == "") return(NA_character_)
+
   lyrics
 }
 
-clean_lyrics_text <- function(lyrics) {
-  if (is.na(lyrics) || lyrics == "") return(NA_character_)
-
-  lyrics <- lyrics %>%
-    str_replace_all("\r", "\n") %>%
-    str_replace_all("\\n{2,}", "\n") %>%
-    str_replace_all("([a-z])([A-Z])", "\\1 \\2") %>%
-    str_replace_all("([a-z0-9])\\[", "\\1\n[") %>%
-    str_replace_all("\\]([A-Za-z])", "\\]\n\\1") %>%
-    str_replace_all("[ \t]+", " ") %>%
-    str_trim()
-  lyrics
-}
-
-get_lyrics_genius_api <- function(main_artist, title, token = GENIUS_TOKEN) {
-  url <- search_genius_url(main_artist, title, token)
-  Sys.sleep(0.5)
-  get_lyrics_from_genius_url(url)
-}
 ```
 
-```{r, eval=FALSE, echo=FALSE}
-## Rap Lyric Collection
+
+## Combined Lyric Retrieval
+
+```{r combined_lyrics_retrieval}
+## Retrieve lyrics using Genius API
+# Purpose: Combine Genius URL search and lyric scraping into one function
+# Inputs: Artist name, song title, and Genius API token
+# Outputs: Lyrics text for each song
+
+get_lyrics_genius_api <- function(main_artist, title, token = GENIUS_TOKEN) {
+  
+  # Search for the Genius URL for the given artist and title
+  url <- search_genius_url(main_artist, title, token)
+  
+  # Pause briefly to avoid sending too many API requests at once
+  Sys.sleep(0.5)
+  
+  # Scrape and return lyrics from the Genius URL
+  get_lyrics_from_genius_url(url)
+}
+
+```
+
+
+## Lyric Collection
+
+```{r lyric_collection, eval=FALSE}
+## Collect lyrics and save expanded dataset
+# Purpose: Add lyrics to the original song dataset
+# Inputs: rap_songs dataframe with artist and title columns
+# Outputs: rap_songs_with_lyrics.csv
+# NOTE: This chunk was run once to collect lyrics and is not re-run when knitting.
+
 rap_songs <- rap_songs %>%
   mutate(
+    # Retrieve lyrics for each artist/title pair
     lyrics = map2_chr(main_artist, title, ~ get_lyrics_genius_api(.x, .y)),
+    
+    # Clean scraped lyrics text
     lyrics = map_chr(lyrics, clean_lyrics_text)
   )
 
+# Save dataset with lyrics
 write.csv(rap_songs, "rap_songs_with_lyrics.csv", row.names = FALSE)
+
 ```
 
-```{r, warning=FALSE}
-## Rap Words Repetition
+
+## Stop Words
+
+```{r stop_words}
+## Load stop words
+# Purpose: Load common English stop words to remove from word repetition calculation
+# Inputs: tidytext stop_words dataset
+# Outputs: stop_words dataframe available for filtering
 
 data("stop_words")
 
+```
+
+
+## Word Repetition Function
+
+```{r word_repetition_function}
+## Calculate word repetition score
+# Purpose: Measure how repetitive each song is based on repeated non-stop words
+# Inputs: Lyrics text
+# Outputs: Numeric repetition score
+
 word_repetition_score <- function(lyrics) {
+  
+  # Return missing value if lyrics are missing
   if (is.na(lyrics) || lyrics == "") return(NA_real_)
 
+  # Clean lyrics and split into individual words
   words <- lyrics %>%
     tolower() %>%
     str_replace_all("[^a-z0-9\\s']", " ") %>%
     str_split("\\s+") %>%
     unlist()
 
+  # Remove blank entries
   words <- words[words != ""]
 
+  # Remove common stop words such as "the", "and", and "to"
   words <- words[!words %in% stop_words$word]
 
+  # Return missing value if no meaningful words remain
   if (length(words) == 0) return(NA_real_)
 
+  # Calculate proportion of repeated words
   1 - (length(unique(words)) / length(words))
 }
+
 ```
 
-```{r}
-## Rap Title Repetition
+
+## Word Count Function
+
+```{r word_count_function}
+## Count words in each song
+# Purpose: Measure song length using total number of words in the lyrics
+# Inputs: Lyrics text
+# Outputs: Numeric word count
+
+word_count <- function(lyrics) {
+  
+  # Return missing value if lyrics are missing
+  if (is.na(lyrics) || lyrics == "") return(NA_real_)
+
+  # Clean lyrics and split into individual words
+  words <- lyrics %>%
+    tolower() %>%
+    str_replace_all("[^a-z0-9\\s']", " ") %>%
+    str_split("\\s+") %>%
+    unlist()
+
+  # Remove blank entries
+  words <- words[words != ""]
+
+  # Return total number of words
+  length(words)
+}
+
+```
+
+
+## Title Repetition Function
+
+```{r title_repetition_function}
+## Calculate title repetition score
+# Purpose: Count how many times the song title appears in the lyrics
+# Inputs: Song title and lyrics text
+# Outputs: Numeric count of title repetitions
 
 title_repetition_score <- function(title, lyrics) {
+  
+  # Return missing value if title or lyrics are missing
   if (is.na(title) || is.na(lyrics) || lyrics == "") return(NA_real_)
 
+  # Clean title text
   title_clean <- title %>%
     tolower() %>%
     str_replace_all("[^a-z0-9\\s']", " ") %>%
     str_squish()
 
+  # Clean lyrics text
   lyrics_clean <- lyrics %>%
     tolower() %>%
     str_replace_all("[^a-z0-9\\s']", " ") %>%
     str_squish()
 
+  # Count number of times title appears in lyrics
   str_count(lyrics_clean, fixed(title_clean))
 }
+
 ```
 
 
-```{r}
-## Rap Repetition Scores
+## Final Dataset Creation
+
+```{r final_dataset_creation}
+## Add repetition scores and word count to dataset
+# Purpose: Create final analysis variables for each song
+# Inputs: rap_songs dataframe with title and lyrics columns
+# Outputs: rap_songs_final.csv
 
 rap_songs <- rap_songs %>%
   mutate(
+    # Count total number of words in each song
+    number_of_words = map_dbl(lyrics, word_count),
+    
+    # Calculate repeated word score for each song
     word_repeat_score = map_dbl(lyrics, word_repetition_score),
+    
+    # Count how many times each song title appears in its lyrics
     title_repeat_score = map2_dbl(title, lyrics, title_repetition_score)
   )
 
+# Save final dataset with analysis variables
 write.csv(rap_songs, "rap_songs_final.csv", row.names = FALSE)
+
 ```
 
-```{r}
-## Rap Year Summary
+
+## Yearly Summary
+
+```{r yearly_summary}
+## Summarize repetition by year
+# Purpose: Calculate average repetition scores for each year
+# Inputs: rap_songs dataframe with repetition score columns
+# Outputs: year_summary dataframe for plotting trends over time
 
 year_summary <- rap_songs %>%
   group_by(year) %>%
   summarise(
+    # Average word repetition score per year
     avg_word_repeat = mean(word_repeat_score, na.rm = TRUE),
+    
+    # Average title repetition count per year
     avg_title_repeat = mean(title_repeat_score, na.rm = TRUE),
+    
     .groups = "drop"
   ) %>%
   filter(!is.na(avg_word_repeat), !is.nan(avg_word_repeat))
+
 ```
 
 
-```{r}
-## Rap Words Plot
+## Word Repetition Plot
+
+```{r word_repetition_plot, warning=FALSE}
+## Plot word repetition over time
+# Purpose: Visualize how average word repetition changes by year
+# Inputs: year_summary dataframe
+# Outputs: Line plot of average word repetition over time
 
 ggplot(year_summary, aes(x = year, y = avg_word_repeat)) +
   geom_line(size = 1) +
@@ -227,8 +394,16 @@ ggplot(year_summary, aes(x = year, y = avg_word_repeat)) +
     y = "Repetition Score"
   )
 
+```
 
-## Rap Title Repetition Plot
+
+## Title Repetition Plot
+
+```{r title_repetition_plot, warning=FALSE}
+## Plot title repetition over time
+# Purpose: Visualize how often song titles are repeated in lyrics by year
+# Inputs: year_summary dataframe
+# Outputs: Line plot of average title repetition over time
 
 ggplot(year_summary, aes(x = year, y = avg_title_repeat)) +
   geom_line(size = 1) +
@@ -239,5 +414,6 @@ ggplot(year_summary, aes(x = year, y = avg_title_repeat)) +
     x = "Year",
     y = "Average Number of Title Repetitions"
   )
+
 ```
 
