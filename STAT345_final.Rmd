@@ -9,7 +9,7 @@ date: "2026-04-15"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 # Rap Songs
 
 ## Rap Setup
@@ -24,22 +24,24 @@ library(jsonlite)
 library(ggplot2)
 library(tidytext)
 
-GENIUS_TOKEN <- "OAvyoTTGQK7L7JgsblybHU6Leb1plm2ppXr2H60JqlNOPbDIYXD5pg0nVA2VO_pV"
+GENIUS_TOKEN <- "PLACE_TOKEN_HERE"
 
 rap_songs <- read.csv("rap_songs_with_lyrics.csv", stringsAsFactors = FALSE)
+```
 
-
-
+```{r, echo=FALSE}
 ## Rap Lyrics Functions
 
 clean_text <- function(x) {
-  x <- enc2utf8(x)
-  x <- iconv(x, from = "UTF-8", to = "ASCII//TRANSLIT", sub = "")
-  x <- str_replace_all(x, "[“”]", "\"")
-  x <- str_replace_all(x, "[‘’]", "'")
-  x <- str_squish(x)
-  x
+  x %>%
+    enc2utf8() %>%
+    iconv(from = "UTF-8", to = "ASCII//TRANSLIT", sub = "") %>%
+    str_replace_all("[“”]", "\"") %>%
+    str_replace_all("[‘’]", "'") %>%
+    str_squish()
 }
+
+### Data Collection (ran once) 
 
 search_genius_url <- function(main_artist, title, token = GENIUS_TOKEN) {
   query <- paste(clean_text(main_artist), clean_text(title))
@@ -130,8 +132,112 @@ get_lyrics_genius_api <- function(main_artist, title, token = GENIUS_TOKEN) {
 }
 ```
 
+```{r, eval=FALSE, echo=FALSE}
+## Rap Lyric Collection
+rap_songs <- rap_songs %>%
+  mutate(
+    lyrics = map2_chr(main_artist, title, ~ get_lyrics_genius_api(.x, .y)),
+    lyrics = map_chr(lyrics, clean_lyrics_text)
+  )
+
+write.csv(rap_songs, "rap_songs_with_lyrics.csv", row.names = FALSE)
+```
+
+```{r, warning=FALSE}
+## Rap Words Repetition
+
+data("stop_words")
+
+word_repetition_score <- function(lyrics) {
+  if (is.na(lyrics) || lyrics == "") return(NA_real_)
+
+  words <- lyrics %>%
+    tolower() %>%
+    str_replace_all("[^a-z0-9\\s']", " ") %>%
+    str_split("\\s+") %>%
+    unlist()
+
+  words <- words[words != ""]
+
+  words <- words[!words %in% stop_words$word]
+
+  if (length(words) == 0) return(NA_real_)
+
+  1 - (length(unique(words)) / length(words))
+}
+```
 
 ```{r}
+## Rap Title Repetition
 
+title_repetition_score <- function(title, lyrics) {
+  if (is.na(title) || is.na(lyrics) || lyrics == "") return(NA_real_)
+
+  title_clean <- title %>%
+    tolower() %>%
+    str_replace_all("[^a-z0-9\\s']", " ") %>%
+    str_squish()
+
+  lyrics_clean <- lyrics %>%
+    tolower() %>%
+    str_replace_all("[^a-z0-9\\s']", " ") %>%
+    str_squish()
+
+  str_count(lyrics_clean, fixed(title_clean))
+}
+```
+
+
+```{r}
+## Rap Repetition Scores
+
+rap_songs <- rap_songs %>%
+  mutate(
+    word_repeat_score = map_dbl(lyrics, word_repetition_score),
+    title_repeat_score = map2_dbl(title, lyrics, title_repetition_score)
+  )
+
+write.csv(rap_songs, "rap_songs_final.csv", row.names = FALSE)
+```
+
+```{r}
+## Rap Year Summary
+
+year_summary <- rap_songs %>%
+  group_by(year) %>%
+  summarise(
+    avg_word_repeat = mean(word_repeat_score, na.rm = TRUE),
+    avg_title_repeat = mean(title_repeat_score, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  filter(!is.na(avg_word_repeat), !is.nan(avg_word_repeat))
+```
+
+
+```{r}
+## Rap Words Plot
+
+ggplot(year_summary, aes(x = year, y = avg_word_repeat)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  theme_minimal() +
+  labs(
+    title = "Word Repetition (Stopwords Removed) in Rap Songs Over Time",
+    x = "Year",
+    y = "Repetition Score"
+  )
+
+
+## Rap Title Repetition Plot
+
+ggplot(year_summary, aes(x = year, y = avg_title_repeat)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  theme_minimal() +
+  labs(
+    title = "Title Repetition in Rap Songs Over Time",
+    x = "Year",
+    y = "Average Number of Title Repetitions"
+  )
 ```
 
