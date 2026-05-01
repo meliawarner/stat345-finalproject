@@ -57,6 +57,7 @@ clean_text <- function(x) {
     str_replace_all("[‘’]", "'") %>%
     str_squish()
 }
+
 ```
 
 
