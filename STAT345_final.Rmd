@@ -41,9 +41,9 @@ rap_songs <- read.csv("rap_songs_with_lyrics.csv", stringsAsFactors = FALSE)
 ```
 
 
-## Lyrics Cleaning
+## Text Cleaning for Genius Search
 
-```{r lyrics_cleaning}
+```{r text_cleaning}
 ## Clean text for Genius API search
 # Purpose: Standardize artist and song title text before searching Genius
 # Inputs: Character string
@@ -192,6 +192,33 @@ get_lyrics_genius_api <- function(main_artist, title, token = GENIUS_TOKEN) {
 ```
 
 
+## Lyric Cleaning
+
+```{r lyric_cleaning}
+## Clean scraped lyrics
+# Purpose: Remove section labels (like [chorus 1]) and clean formatting in lyrics
+# Inputs: Raw lyrics text
+# Outputs: Cleaned lyrics text
+
+clean_lyrics_text <- function(lyrics) {
+  
+  # Return NA if lyrics are missing
+  if (is.na(lyrics) || lyrics == "") return(NA_character_)
+
+  lyrics <- lyrics %>%
+    str_replace_all("\\[.*?\\]", "") %>%  # Remove [Verse], [Chorus], etc.
+    str_replace_all("\r", "\n") %>%
+    str_replace_all("\\n{2,}", "\n") %>%
+    str_replace_all("([a-z])([A-Z])", "\\1 \\2") %>%
+    str_replace_all("[ \t]+", " ") %>%
+    str_trim()
+
+  lyrics
+}
+
+```
+
+
 ## Lyric Collection
 
 ```{r lyric_collection, eval=FALSE}
@@ -211,6 +238,26 @@ rap_songs <- rap_songs %>%
   )
 
 # Save dataset with lyrics
+write.csv(rap_songs, "rap_songs_with_lyrics.csv", row.names = FALSE)
+
+```
+
+
+## Re-Clean Saved Lyrics
+
+```{r reclean_lyrics}
+## Re-clean saved lyrics
+# Purpose: Apply updated lyric cleaning to the saved lyrics dataset
+# Inputs: rap_songs dataframe with existing lyrics column
+# Outputs: rap_songs dataframe with cleaned lyrics
+
+rap_songs <- rap_songs %>%
+  mutate(
+    # Remove section labels and clean formatting from already-collected lyrics
+    lyrics = map_chr(lyrics, clean_lyrics_text)
+  )
+
+# Save updated lyrics dataset
 write.csv(rap_songs, "rap_songs_with_lyrics.csv", row.names = FALSE)
 
 ```
