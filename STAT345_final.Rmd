@@ -418,3 +418,16 @@ ggplot(year_summary, aes(x = year, y = avg_title_repeat)) +
 
 ```
 
+
+
+
+
+### Pop Songs Analysis
+
+
+
+
+
+
+
+### Country Songs Analysis
