@@ -31,19 +31,18 @@ library(ggplot2)    # Visualization
 library(tidytext)   # Stop word dataset
 
 # Genius API token (I removed my personal token)
-GENIUS_TOKEN <- "PLACE_TOKEN_HERE"
+GENIUS_TOKEN <- "Token"
 
 # Read in dataset for analysis
 # NOTE: Original dataset was "rap_songs.csv" (manually created with song info).
 # After collecting lyrics using the Genius API and expanding the dataset to include them, I saved the dataset as "rap_songs_with_lyrics.csv", and used this for all analysis steps.
 rap_songs <- read.csv("rap_songs_with_lyrics.csv", stringsAsFactors = FALSE)
-
 ```
 
 
 ## Text Cleaning for Genius Search
 
-```{r text_cleaning}
+```{r rap_text_cleaning}
 ## Clean text for Genius API search
 # Purpose: Standardize artist and song title text before searching Genius
 # Inputs: Character string
@@ -63,7 +62,7 @@ clean_text <- function(x) {
 
 ## Genius API Search
 
-```{r genius_search}
+```{r rap_genius_search}
 ## Search Genius for song URL
 # Purpose: Find the best matching Genius lyrics page for each song
 # Inputs: Artist name, song title, and Genius API token
@@ -120,7 +119,7 @@ search_genius_url <- function(main_artist, title, token = GENIUS_TOKEN) {
 
 ## Genius Lyric Scraping
 
-```{r genius_scraping}
+```{r rap_genius_scraping}
 ## Scrape lyrics from Genius URL
 # Purpose: Extract lyrics text from the selected Genius lyrics page
 # Inputs: Genius song URL
@@ -171,7 +170,7 @@ get_lyrics_from_genius_url <- function(song_url) {
 
 ## Combined Lyric Retrieval
 
-```{r combined_lyrics_retrieval}
+```{r rap_combined_lyrics_retrieval}
 ## Retrieve lyrics using Genius API
 # Purpose: Combine Genius URL search and lyric scraping into one function
 # Inputs: Artist name, song title, and Genius API token
@@ -194,7 +193,7 @@ get_lyrics_genius_api <- function(main_artist, title, token = GENIUS_TOKEN) {
 
 ## Lyric Cleaning
 
-```{r lyric_cleaning}
+```{r rap_lyric_cleaning}
 ## Clean scraped lyrics
 # Purpose: Remove section labels (like [chorus 1]) and clean formatting in lyrics
 # Inputs: Raw lyrics text
@@ -221,7 +220,7 @@ clean_lyrics_text <- function(lyrics) {
 
 ## Lyric Collection
 
-```{r lyric_collection, eval=FALSE}
+```{r rap_lyric_collection, eval=FALSE}
 ## Collect lyrics and save expanded dataset
 # Purpose: Add lyrics to the original song dataset
 # Inputs: rap_songs dataframe with artist and title columns
@@ -245,7 +244,7 @@ write.csv(rap_songs, "rap_songs_with_lyrics.csv", row.names = FALSE)
 
 ## Re-Clean Saved Lyrics
 
-```{r reclean_lyrics}
+```{r rap_reclean_lyrics, eval=FALSE}
 ## Re-clean saved lyrics
 # Purpose: Apply updated lyric cleaning to the saved lyrics dataset
 # Inputs: rap_songs dataframe with existing lyrics column
@@ -265,7 +264,7 @@ write.csv(rap_songs, "rap_songs_with_lyrics.csv", row.names = FALSE)
 
 ## Stop Words
 
-```{r stop_words}
+```{r rap_stop_words}
 ## Load stop words
 # Purpose: Load common English stop words to remove from word repetition calculation
 # Inputs: tidytext stop_words dataset
@@ -278,7 +277,7 @@ data("stop_words")
 
 ## Word Repetition Function
 
-```{r word_repetition_function}
+```{r rap_word_repetition_function}
 ## Calculate word repetition score
 # Purpose: Measure how repetitive each song is based on repeated non-stop words
 # Inputs: Lyrics text
@@ -314,7 +313,7 @@ word_repetition_score <- function(lyrics) {
 
 ## Word Count Function
 
-```{r word_count_function}
+```{r rap_word_count_function}
 ## Count words in each song
 # Purpose: Measure song length using total number of words in the lyrics
 # Inputs: Lyrics text
@@ -344,7 +343,7 @@ word_count <- function(lyrics) {
 
 ## Title Repetition Function
 
-```{r title_repetition_function}
+```{r rap_title_repetition_function}
 ## Calculate title repetition score
 # Purpose: Count how many times the song title appears in the lyrics
 # Inputs: Song title and lyrics text
@@ -376,7 +375,7 @@ title_repetition_score <- function(title, lyrics) {
 
 ## Final Dataset Creation
 
-```{r final_dataset_creation}
+```{r rap_final_dataset_creation}
 ## Add repetition scores and word count to dataset
 # Purpose: Create final analysis variables for each song
 # Inputs: rap_songs dataframe with title and lyrics columns
@@ -402,7 +401,7 @@ write.csv(rap_songs, "rap_songs_final.csv", row.names = FALSE)
 
 ## Yearly Summary
 
-```{r yearly_summary}
+```{r rap_yearly_summary}
 ## Summarize repetition by year
 # Purpose: Calculate average repetition scores for each year
 # Inputs: rap_songs dataframe with repetition score columns
@@ -426,7 +425,7 @@ year_summary <- rap_songs %>%
 
 ## Word Repetition Plot
 
-```{r word_repetition_plot, warning=FALSE}
+```{r rap_word_repetition_plot, warning=FALSE}
 ## Plot word repetition over time
 # Purpose: Visualize how average word repetition changes by year
 # Inputs: year_summary dataframe
@@ -435,6 +434,7 @@ year_summary <- rap_songs %>%
 ggplot(year_summary, aes(x = year, y = avg_word_repeat)) +
   geom_line(size = 1) +
   geom_point(size = 2) +
+  geom_smooth(color = "red", se = FALSE, linetype = "dashed") +
   theme_minimal() +
   labs(
     title = "Word Repetition (Stopwords Removed) in Rap Songs Over Time",
@@ -447,7 +447,7 @@ ggplot(year_summary, aes(x = year, y = avg_word_repeat)) +
 
 ## Title Repetition Plot
 
-```{r title_repetition_plot, warning=FALSE}
+```{r rap_title_repetition_plot, warning=FALSE}
 ## Plot title repetition over time
 # Purpose: Visualize how often song titles are repeated in lyrics by year
 # Inputs: year_summary dataframe
@@ -456,18 +456,77 @@ ggplot(year_summary, aes(x = year, y = avg_word_repeat)) +
 ggplot(year_summary, aes(x = year, y = avg_title_repeat)) +
   geom_line(size = 1) +
   geom_point(size = 2) +
+  geom_smooth(color = "red", se = FALSE, linetype = "dashed") +
   theme_minimal() +
   labs(
     title = "Title Repetition in Rap Songs Over Time",
     x = "Year",
     y = "Average Number of Title Repetitions"
   )
+```
+
+
+## Most Repetitive Rap Songs
+
+```{r rap_most_repetitive}
+## Identify most repetitive rap songs
+# Purpose: Display the top 10 songs with the highest word repetition scores
+# Inputs: rap_songs dataframe with repetition score variables
+# Outputs: Table of the most repetitive songs including year, title, artist, and repetition metrics
+
+rap_songs %>%
+  
+  # Sort songs from highest to lowest word repetition score
+  arrange(desc(word_repeat_score)) %>%
+  
+  # Select relevant columns for interpretation
+  select(year, title, main_artist, word_repeat_score, title_repeat_score, number_of_words) %>%
+  
+  # Display the top 10 most repetitive songs
+  head(10)
+
+```
+
+
+## Top Words Overall
+
+```{r rap_top_words}
+## Find top words overall
+# Purpose: Identify most frequently used words in rap lyrics (excluding stop words)
+# Inputs: rap_songs dataset with lyrics column
+# Outputs: top_words dataframe of most common words
+
+rap_songs <- rap_songs %>%
+  mutate(
+    lyrics = as.character(lyrics)
+  )
+
+top_words <- rap_songs %>%
+  
+  # Break lyrics into individual words (one word per row)
+  unnest_tokens(word, lyrics) %>%
+  
+  # Remove common stop words (e.g., "the", "and", "to")
+  anti_join(stop_words, by = "word") %>%
+  
+  # Remove offensive word from results
+  filter(word != "nigga") %>%
+  
+  # Count how often each word appears and sort from most to least frequent
+  count(word, sort = TRUE)
+
+# Display top 20 most frequent words
+top_words %>%
+  head(20)
+
 
 ```
 
 
 
 
+
+--------------------------------
 
 ### Pop Songs Analysis
 
@@ -481,8 +540,7 @@ ggplot(year_summary, aes(x = year, y = avg_title_repeat)) +
 
 ## Country Setup
 
-```{r country_genius_slow_pull, message=FALSE, warning=FALSE, echo=FALSE}
-
+```{r country_setup, message=FALSE, warning=FALSE}
 ## Pull lyrics for country songs using the Genius API and Genius song pages
 # Purpose: Start with a manually created country songs dataset, locate each song
 # on Genius, scrape the lyrics, and save the expanded dataset with lyrics.
@@ -509,12 +567,19 @@ GENIUS_TOKEN <- "Token"
 # This dataset includes song information such as year, title, and artist.
 country_songs <- read_excel("country_songs.csv")
 
+```
+
+
+## Text Cleaning for Genius Search
+
+```{r country_text_cleaning}
 # Function to clean text before searching Genius.
 # This helps make artist names and song titles easier to match by:
 #   - converting text to character format
 #   - fixing encoding issues
 #   - removing special characters
 #   - removing extra spaces
+
 clean_text <- function(x) {
   x %>%
     as.character() %>%
@@ -524,6 +589,12 @@ clean_text <- function(x) {
     str_squish()
 }
 
+```
+
+
+## Genius API Search
+
+```{r country_genius_search}
 # Function to search Genius for a song and return the best Genius URL.
 # Inputs:
 #   artist = main artist name
@@ -559,7 +630,12 @@ search_genius_url <- function(artist, title, token = GENIUS_TOKEN) {
   hits$result.url[1]
 }
 
+```
 
+
+## Genius Lyric Scraping
+
+```{r country_genius_searching}
 # Function to scrape lyrics from a Genius song URL.
 # Input:
 #   url = Genius song page URL
@@ -611,9 +687,18 @@ get_lyrics_from_url <- function(url) {
     str_squish()
 }
 
-# Add Genius URLs to the dataset.
-# Some songs list multiple artists, so this creates a main_artist column
-# using the first listed artist to improve Genius search accuracy.
+```
+
+
+## Lyric Collection
+
+```{r country_lyric_collection}
+## Collect country lyrics and save dataset
+# Purpose: Add Genius URLs and lyrics to country songs dataset
+# Inputs: country_songs dataframe
+# Outputs: country_songs_with_lyrics.csv and progress file
+# NOTE: This chunk was run once and should not be re-run when knitting.
+
 country_songs_with_lyrics <- country_songs %>%
   mutate(
     main_artist = str_split(artists, ",|&|feat\\.|featuring") %>% map_chr(1),
@@ -664,16 +749,25 @@ sum(is.na(country_songs_with_lyrics$lyrics))
 ```
 
 
+## Load Lyrics Dataset
 
-
-```{r}
-#read in what was just created above to avoid running again
-country_songs <- read_csv("Country_songs_with_lyrics.csv")
+```{r country_load_lyrics}
+## Load country lyrics dataset
+# Purpose: Load completed country lyrics dataset without re-scraping
+# Inputs: Country_songs_with_lyrics.csv
+# Outputs: country_songs_with_lyrics dataframe
+country_songs <- read_csv("country_songs_with_lyrics.csv")
 ```
 
 
-```{r clean_country_songs_from_scratch, message=FALSE, warning=FALSE}
+## Word Count Function
+
+```{r country_word_count, message=FALSE, warning=FALSE}
 ## Clean country songs dataset starting from raw Genius lyrics
+## Count words in country songs
+# Purpose: Count total words in each song
+# Inputs: Lyrics text
+# Outputs: Numeric word count
 
 # Load packages needed for reading data, cleaning text, and working with data
 library(readr)
@@ -682,7 +776,7 @@ library(stringr)
 library(purrr)
 
 # Read in the dataset that contains the raw scraped lyrics
-country_songs_with_lyrics <- read_csv("Country_songs_with_lyrics.csv")
+country_songs_with_lyrics <- read_csv("country_songs_with_lyrics.csv")
 
 # Function to count total number of words in each song
 # This will be used later to identify unusually long songs
@@ -705,8 +799,17 @@ word_count <- function(lyrics) {
   length(words)
 }
 
-# Function to clean up messy Genius lyrics
-# This removes all the extra stuff that isn’t actually part of the song
+```
+
+
+## Lyric Cleaning Function 
+
+```{r country_lyric_cleaning}
+## Clean country lyrics
+# Purpose: Remove Genius metadata, section labels, and extra text
+# Inputs: Raw lyrics text
+# Outputs: Cleaned lyrics text
+
 clean_lyrics <- function(lyrics) {
   
   if (is.na(lyrics) || lyrics == "") return(NA_character_)
@@ -758,7 +861,17 @@ clean_lyrics <- function(lyrics) {
   cleaned
 }
 
-# Apply cleaning and create new variables
+```
+
+
+## Clean Songs Dataset
+
+```{r country_clean_dataset, message=FALSE, warning=FALSE}
+## Clean country songs dataset
+# Purpose: Apply lyric cleaning and create word count variable
+# Inputs: country_songs_with_lyrics dataframe
+# Outputs: country_songs_clean dataframe and country_songs_clean.csv
+
 country_songs_clean <- country_songs_with_lyrics %>%
   mutate(
     # Clean the lyrics
@@ -803,7 +916,7 @@ long_songs_check %>% select(title, artists, number_of_words)
 
 ## Stop Words
 
-```{r stop_words}
+```{r country_stop_words}
 ## Load stop words
 # Purpose: Load common English stop words to remove from word repetition calculation
 # Inputs: tidytext stop_words dataset
@@ -813,9 +926,10 @@ data("stop_words")
 
 ```
 
+
 ## Word Repetition Function
 
-```{r word_repetition_function}
+```{r country_word_repetition_function}
 ## Calculate word repetition score
 # Purpose: Measure how repetitive each country song is based on repeated meaningful words
 # Inputs: lyrics text from each song
@@ -851,9 +965,10 @@ word_repetition_score <- function(lyrics) {
 }
 ```
 
-##Word Count Function
 
-```{r word_count_function}
+## Word Count Function
+
+```{r country_word_count_function}
 ## Count words in each song
 # Purpose: Measure song length using the total number of words in the lyrics
 # Inputs: lyrics text from each song
@@ -881,9 +996,14 @@ word_count <- function(lyrics) {
 
 ```
 
-##Add Word Repetition to Dataset
-```{r}
-## Add word repetition score to dataset
+
+## Add Word Repetition to Dataset
+
+```{r country_add_word_repetition}
+## Add word repetition scores to country dataset
+# Purpose: Create word_repeat_score variable
+# Inputs: country_songs_clean dataframe
+# Outputs: Updated country_songs_clean dataframe
 
 country_songs_clean <- country_songs_clean %>%
   mutate(
@@ -898,9 +1018,9 @@ country_songs_clean %>%
 
 
 
-##Title Repetition Function
+## Title Repetition Function
 
-```{r title_repetition_function}
+```{r country_title_repetition_function}
 ## Calculate title repetition score
 # Purpose: Count how many times each country song title appears in its lyrics
 # Inputs: song title and lyrics text
@@ -930,9 +1050,14 @@ title_repetition_score <- function(title, lyrics) {
 
 ```
 
-##Add Title Repetition to Dataset
-```{r}
-## Add title repetition score to dataset
+
+## Add Title Repetition to Dataset
+
+```{r country_add_title_repetition}
+## Add title repetition scores to country dataset
+# Purpose: Create title_repeat_score variable
+# Inputs: country_songs_clean dataframe
+# Outputs: Updated country_songs_clean dataframe
 
 country_songs_clean <- country_songs_clean %>%
   mutate(
@@ -945,8 +1070,10 @@ country_songs_clean %>%
   head()
 ```
 
-##Year Summary
-```{r}
+
+## Yearly Summary
+
+```{r country_yearly_summary}
 ## Summarize repetition by year
 # Purpose: Calculate average repetition scores for each year
 # Inputs: country_songs_clean dataframe with repetition score columns
@@ -971,8 +1098,11 @@ year_summary <- country_songs_clean %>%
 # View the summary
 year_summary
 ```
-##Word Repetition Plot
-```{r word_repetition_plot, warning=FALSE}
+
+
+## Word Repetition Plot
+
+```{r country_word_repetition_plot, warning=FALSE}
 ## Plot word repetition over time
 # Purpose: Visualize how average word repetition changes by year for country music
 
@@ -987,7 +1117,7 @@ ggplot(year_summary, aes(x = year, y = avg_word_repeat)) +
   geom_point(size = 2) +
   
   # Add a smooth trend line for easier interpretation
-  geom_smooth(se = FALSE, linetype = "dashed") +
+  geom_smooth(color = "blue", se = FALSE, linetype = "dashed") +
   
   # Clean theme
   theme_minimal() +
@@ -1009,10 +1139,13 @@ ggplot(year_summary, aes(x = year, y = avg_word_repeat)) +
 ```
 The results show a general increase in word repetition in country songs over time. From 2006 to around 2020, repetition scores steadily rise, indicating that more recent songs tend to reuse words more frequently. This suggests a shift toward more repetitive lyrical structures, such as stronger emphasis on choruses or hooks. Although there is some variation across individual years, the overall upward trend is clear. After 2020, repetition appears to level off slightly, which may indicate that repetition has reached a plateau in more recent country music.
 
-##Title Repetition Plot
-```{r title_repetition_plot, warning=FALSE}
-## Plot title repetition over time
-# Purpose: Visualize how often song titles are repeated in country song lyrics over time
+
+## Title Repetition Plot
+```{r country_title_repetition_plot, warning=FALSE}
+## Plot country title repetition over time
+# Purpose: Visualize changes in average title repetition by year
+# Inputs: country_year_summary dataframe
+# Outputs: Line plot with trend line
 
 ggplot(year_summary, aes(x = year, y = avg_title_repeat)) +
   
@@ -1023,7 +1156,7 @@ ggplot(year_summary, aes(x = year, y = avg_title_repeat)) +
   geom_point(size = 2) +
   
   # Add smooth trend line
-  geom_smooth(se = FALSE, linetype = "dashed") +
+  geom_smooth(color = "blue", se = FALSE, linetype = "dashed") +
   
   # Clean theme
   theme_minimal() +
@@ -1046,12 +1179,15 @@ ggplot(year_summary, aes(x = year, y = avg_title_repeat)) +
 
 The title repetition results show a more variable pattern compared to overall word repetition. While there are noticeable spikes in certain years, there is no clear long-term upward or downward trend. This suggests that although country songs may be becoming more repetitive overall, they are not necessarily repeating the song title more frequently. Instead, title repetition appears to fluctuate depending on the style of songs that are popular in a given year.
 
-##Extras
+## Extras
 
-##Top words overall
-```{r top_words_overall, message=FALSE, warning=FALSE}
-## Find most common words across all country songs
-# Purpose: Identify which words are most frequently used in country music lyrics overall
+## Top words overall
+
+```{r country_top_words_overall, message=FALSE, warning=FALSE}
+## Find most common country words
+# Purpose: Identify most frequently used words in country lyrics
+# Inputs: country_songs_clean dataframe
+# Outputs: country_top_words dataframe
 
 library(tidytext)
 library(dplyr)
@@ -1067,10 +1203,18 @@ top_words %>%
 ```
 
 
-##Most Repetitive Country Songs
-```{r}
+## Most Repetitive Country Songs
+
+```{r country_most_repetitive}
+## Identify most repetitive country songs
+# Purpose: Display songs with highest word repetition scores
+# Inputs: country_songs_clean dataframe
+# Outputs: Table of most repetitive country songs
+
 country_songs_clean %>%
   arrange(desc(word_repeat_score)) %>%
   select(title, artists, word_repeat_score) %>%
   head(10)
 ```
+
+
