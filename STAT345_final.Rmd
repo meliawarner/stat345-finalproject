@@ -425,7 +425,7 @@ year_summary <- rap_songs %>%
 
 ## Word Repetition Plot
 
-```{r rap_word_repetition_plot, warning=FALSE}
+```{r rap_word_repetition_plot, warning=FALSE, message=FALSE}
 ## Plot word repetition over time
 # Purpose: Visualize how average word repetition changes by year
 # Inputs: year_summary dataframe
@@ -447,7 +447,7 @@ ggplot(year_summary, aes(x = year, y = avg_word_repeat)) +
 
 ## Title Repetition Plot
 
-```{r rap_title_repetition_plot, warning=FALSE}
+```{r rap_title_repetition_plot, warning=FALSE, message=FALSE}
 ## Plot title repetition over time
 # Purpose: Visualize how often song titles are repeated in lyrics by year
 # Inputs: year_summary dataframe
@@ -515,10 +515,9 @@ top_words <- rap_songs %>%
   # Count how often each word appears and sort from most to least frequent
   count(word, sort = TRUE)
 
-# Display top 20 most frequent words
+# Display top 10 most frequent words
 top_words %>%
-  head(20)
-
+  head(10)
 
 ```
 
@@ -544,14 +543,13 @@ top_words %>%
 ## Pull lyrics for country songs using the Genius API and Genius song pages
 # Purpose: Start with a manually created country songs dataset, locate each song
 # on Genius, scrape the lyrics, and save the expanded dataset with lyrics.
-# Inputs: country_songs.csv
+# Inputs: country_songs_with_lyrics.csv (originally country_songs.csv)
 # Outputs:
 #   1. Country_songs_with_lyrics_PROGRESS.csv
 #   2. Country_songs_with_lyrics.csv
 
 # Load packages needed for reading files, scraping webpages, cleaning text,
 # working with data frames, calling APIs, and reading JSON results.
-library(readxl)
 library(rvest)
 library(stringr)
 library(dplyr)
@@ -559,13 +557,17 @@ library(purrr)
 library(tibble)
 library(httr)
 library(jsonlite)
+library(readr)
+library(tidytext)
+library(ggplot2)
 
 # Genius API token used to access the Genius search API.
 GENIUS_TOKEN <- "Token"
 
-# Read in the manually created country songs dataset.
-# This dataset includes song information such as year, title, and artist.
-country_songs <- read_excel("country_songs.csv")
+# Read in dataset for analysis
+# NOTE: Original dataset was "country_songs.csv" (manually created with song info).
+# After collecting lyrics using the Genius API and expanding the dataset to include them, I saved the dataset as "country_songs_with_lyrics.csv", and used this for all analysis steps.
+country_songs <- read_csv("country_songs_with_lyrics.csv")
 
 ```
 
@@ -692,7 +694,7 @@ get_lyrics_from_url <- function(url) {
 
 ## Lyric Collection
 
-```{r country_lyric_collection}
+```{r country_lyric_collection, eval=FALSE}
 ## Collect country lyrics and save dataset
 # Purpose: Add Genius URLs and lyrics to country songs dataset
 # Inputs: country_songs dataframe
@@ -751,53 +753,14 @@ sum(is.na(country_songs_with_lyrics$lyrics))
 
 ## Load Lyrics Dataset
 
-```{r country_load_lyrics}
+```{r country_load_lyrics, message=FALSE, warning=FALSE}
 ## Load country lyrics dataset
-# Purpose: Load completed country lyrics dataset without re-scraping
-# Inputs: Country_songs_with_lyrics.csv
+# Purpose: Load dataset that already includes scraped lyrics
+# Inputs: country_songs_with_lyrics.csv
 # Outputs: country_songs_with_lyrics dataframe
-country_songs <- read_csv("country_songs_with_lyrics.csv")
-```
-
-
-## Word Count Function
-
-```{r country_word_count, message=FALSE, warning=FALSE}
-## Clean country songs dataset starting from raw Genius lyrics
-## Count words in country songs
-# Purpose: Count total words in each song
-# Inputs: Lyrics text
-# Outputs: Numeric word count
-
-# Load packages needed for reading data, cleaning text, and working with data
-library(readr)
-library(dplyr)
-library(stringr)
-library(purrr)
 
 # Read in the dataset that contains the raw scraped lyrics
 country_songs_with_lyrics <- read_csv("country_songs_with_lyrics.csv")
-
-# Function to count total number of words in each song
-# This will be used later to identify unusually long songs
-word_count <- function(lyrics) {
-  
-  # If lyrics are missing, return NA so we don’t break the code
-  if (is.na(lyrics) || lyrics == "") return(NA_real_)
-  
-  # Convert to lowercase, remove punctuation, and split into words
-  words <- lyrics %>%
-    tolower() %>%
-    str_replace_all("[^a-z0-9\\s']", " ") %>%
-    str_split("\\s+") %>%
-    unlist()
-  
-  # Remove empty values that may have been created
-  words <- words[words != ""]
-  
-  # Return total number of words
-  length(words)
-}
 
 ```
 
@@ -911,6 +874,7 @@ nrow(country_songs_clean)
 
 # Show which songs are still unusually long
 long_songs_check %>% select(title, artists, number_of_words)
+
 ```
 
 
@@ -1077,9 +1041,9 @@ country_songs_clean %>%
 ## Summarize repetition by year
 # Purpose: Calculate average repetition scores for each year
 # Inputs: country_songs_clean dataframe with repetition score columns
-# Outputs: year_summary dataframe for plotting trends over time
+# Outputs: country_year_summary dataframe for plotting trends over time
 
-year_summary <- country_songs_clean %>%
+country_year_summary <- country_songs_clean %>%
   group_by(year) %>%
   summarise(
     
@@ -1096,7 +1060,7 @@ year_summary <- country_songs_clean %>%
   filter(!is.na(avg_word_repeat), !is.nan(avg_word_repeat))
 
 # View the summary
-year_summary
+country_year_summary
 ```
 
 
@@ -1106,9 +1070,7 @@ year_summary
 ## Plot word repetition over time
 # Purpose: Visualize how average word repetition changes by year for country music
 
-library(ggplot2)
-
-ggplot(year_summary, aes(x = year, y = avg_word_repeat)) +
+ggplot(country_year_summary, aes(x = year, y = avg_word_repeat)) +
   
   # Line showing trend over time
   geom_line(linewidth = 1) +
@@ -1147,7 +1109,7 @@ The results show a general increase in word repetition in country songs over tim
 # Inputs: country_year_summary dataframe
 # Outputs: Line plot with trend line
 
-ggplot(year_summary, aes(x = year, y = avg_title_repeat)) +
+ggplot(country_year_summary, aes(x = year, y = avg_title_repeat)) +
   
   # Line showing trend
   geom_line(linewidth = 1) +
@@ -1189,16 +1151,13 @@ The title repetition results show a more variable pattern compared to overall wo
 # Inputs: country_songs_clean dataframe
 # Outputs: country_top_words dataframe
 
-library(tidytext)
-library(dplyr)
-
-top_words <- country_songs_clean %>%
+country_top_words <- country_songs_clean %>%
   unnest_tokens(word, lyrics) %>%
   anti_join(stop_words, by = "word") %>%
   count(word, sort = TRUE)
 
 # View top words
-top_words %>%
+country_top_words %>%
   head(20)
 ```
 
