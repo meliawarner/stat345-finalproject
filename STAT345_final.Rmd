@@ -437,7 +437,7 @@ ggplot(year_summary, aes(x = year, y = avg_word_repeat)) +
   geom_smooth(color = "red", se = FALSE, linetype = "dashed") +
   theme_minimal() +
   labs(
-    title = "Word Repetition (Stopwords Removed) in Rap Songs Over Time",
+    title = "Word Repetition (Stopwords Removed) in Rap Songs Over Time (2006-2026)",
     x = "Year",
     y = "Repetition Score"
   )
@@ -459,7 +459,7 @@ ggplot(year_summary, aes(x = year, y = avg_title_repeat)) +
   geom_smooth(color = "red", se = FALSE, linetype = "dashed") +
   theme_minimal() +
   labs(
-    title = "Title Repetition in Rap Songs Over Time",
+    title = "Title Repetition in Rap Songs Over Time (2006-2026)",
     x = "Year",
     y = "Average Number of Title Repetitions"
   )
@@ -1066,7 +1066,7 @@ country_year_summary
 
 ## Word Repetition Plot
 
-```{r country_word_repetition_plot, warning=FALSE}
+```{r country_word_repetition_plot, warning=FALSE, message=FALSE}
 ## Plot word repetition over time
 # Purpose: Visualize how average word repetition changes by year for country music
 
@@ -1103,7 +1103,8 @@ The results show a general increase in word repetition in country songs over tim
 
 
 ## Title Repetition Plot
-```{r country_title_repetition_plot, warning=FALSE}
+
+```{r country_title_repetition_plot, warning=FALSE, message=FALSE}
 ## Plot country title repetition over time
 # Purpose: Visualize changes in average title repetition by year
 # Inputs: country_year_summary dataframe
