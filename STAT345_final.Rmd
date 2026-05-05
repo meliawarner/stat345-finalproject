@@ -510,14 +510,14 @@ top_words <- rap_songs %>%
   anti_join(stop_words, by = "word") %>%
   
   # Remove offensive word from results
-  filter(word != "nigga") %>%
+  filter(word != "nigga", word != "niggas") %>%
   
   # Count how often each word appears and sort from most to least frequent
   count(word, sort = TRUE)
 
 # Display top 10 most frequent words
 top_words %>%
-  head(10)
+  head(20)
 
 ```
 
