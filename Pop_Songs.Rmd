@@ -1,0 +1,785 @@
+---
+title: "PopSongs"
+output: html_document
+date: "2026-04-25"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# ===========================================================
+# 1: POP SETUP
+# Purpose:
+# - Load all required packages
+# - Load pop songs dataset
+# - Store Genius API token
+# Inputs:
+# - Pop_Songs1.csv
+# Outputs:
+# - pop_songs dataframe
+# ===========================================================
+
+```{r pop_setup, message=FALSE, warning=FALSE}
+
+#Loaded packages needed for:
+library(rvest)    #Web Scraping
+library(stringr)  #String Manipluation
+library(dplyr)    #Data Manipulation
+library(purrr)    #Function Programing
+library(tibble)   #Data framing tools
+library(httr)     #API requests
+library(jsonlite) #JSON tools
+library(readr)    #Reading CSV Files
+library(tidytext) #Stop word dataset
+library(ggplot2)  #Visualization
+
+#Genius API token used for Genius song searching
+#Kept this unique variable name so it does not conflict with my group members' code.
+GENIUS_TOKEN_POP <- "nkuSlxBMD3TMJ40tfIEKNMgAi__zgTH2bV9vAAu0OqtEHXhOchXP2f_xIljeL1Bi"
+
+#Read in pop songs dataset
+pop_songs <- read_csv("/Users/kyleedahlstrom/Downloads/Pop_Songs1.csv")
+
+#Preview the dataset
+head(pop_songs)
+
+```
+
+# ===========================================================
+# 2: CLEAN TEXT FOR GENIUS SEARCH
+# Purpose:
+# - Clean artist names and song titles before searching
+# - Remove special characters and formatting issues
+# Inputs:
+# - Artist names
+# - Song titles
+# Outputs:
+# - Cleaned text strings
+# ===========================================================
+
+```{r pop_text_cleaning}
+
+pop_clean_text <- function(x) {
+  
+  x %>%
+    #Convert to character format
+    as.character() %>%
+    #Fix encoding issues
+    enc2utf8() %>%
+    #Convert special characters into standard text
+    iconv(from = "UTF-8", to = "ASCII//TRANSLIT", sub = "") %>%
+    #Remove non-alphanumeric characters
+    str_replace_all("[^[:alnum:]\\s']", " ") %>%
+    #Remove extra spaces
+    str_squish()
+}
+```
+
+# ===========================================================
+# 3: SEARCH GENIUS FOR SONG URL
+# Purpose:
+# - Search Genius API
+# - Find best matching Genius page for each song
+# Inputs:
+# - Artist name
+# - Song title
+# Outputs:
+# - Genius song URL
+# ===========================================================
+
+```{r pop_genius_search}
+
+pop_search_genius_url <- function(artist, title, token = GENIUS_TOKEN_POP) {
+  
+  #Combine artist + title into one search query
+  pop_query <- paste(
+    pop_clean_text(artist),
+    pop_clean_text(title))
+  
+  #Send request to Genius API
+  pop_res <- GET(
+    "https://api.genius.com/search",
+    query = list(q = pop_query),
+    add_headers(
+      Authorization = paste("Bearer", token)))
+  
+  #If request fails, return NA
+  if (status_code(pop_res) != 200)
+    return(NA_character_)
+  
+  #Convert JSON response into R object
+  pop_dat <- fromJSON(
+    content(pop_res, as = "text", encoding = "UTF-8"), flatten = TRUE)
+  
+  #Extract search results
+  pop_hits <- pop_dat$response$hits
+  
+  #If no results found, return NA
+  if (length(pop_hits) == 0 || nrow(pop_hits) == 0)
+    return(NA_character_)
+  
+  #Return first Genius result URL
+  pop_hits$result.url[1]
+}
+```
+
+# ===========================================================
+# 4: SCRAPE LYRICS FROM GENIUS URL
+# Purpose:
+# - Visit Genius webpage
+# - Extract lyrics text
+# Inputs:
+# - Genius URL
+# Outputs:
+# - Lyrics text
+# ===========================================================
+
+```{r pop_genius_scraping}
+
+pop_get_lyrics_from_url <- function(url) {
+  
+  #If URL missing, return NA
+  if (is.na(url) || url == "")
+    return(NA_character_)
+  
+  #Pause between requests to prevent Genius from blocking scraping
+  Sys.sleep(runif(1, 3, 6))
+  
+  #Send webpage request
+  #User agent makes request appear more like a real browser
+  pop_res <- tryCatch(
+    
+    GET(url, user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)"),
+      add_headers(`Accept-Language` = "en-US,en;q=0.9",
+        `Accept` =
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")),
+    
+    error = function(e) return(NULL))
+  
+  #If request failed, return NA
+  if (is.null(pop_res) || status_code(pop_res) != 200)
+    return(NA_character_)
+  
+  #Read HTML page
+  pop_page <- tryCatch(
+    read_html(pop_res),
+    error = function(e) return(NULL))
+  
+  #If page fails, return NA
+  if (is.null(pop_page))
+    return(NA_character_)
+  
+  #Extract lyrics containers
+  pop_lyrics <- pop_page %>%
+    
+    html_elements("div[data-lyrics-container='true']") %>%
+    
+    html_text2() %>%
+    
+    paste(collapse = "\n")
+  
+  #If no lyrics found, return NA
+  if (pop_lyrics == "" || length(pop_lyrics) == 0)
+    return(NA_character_)
+  
+  #Clean ending "Embed" text
+  pop_lyrics %>%
+    str_replace_all("Embed$", "") %>%
+    str_squish()
+}
+
+```
+
+# ===========================================================
+# 5: COLLECT LYRICS
+# Purpose:
+# - Search Genius for each song
+# - Scrape lyrics
+# - Save progress continuously
+# Inputs:
+# - pop_songs dataframe
+# Outputs:
+# - Pop_songs_with_lyrics.csv
+# ===========================================================
+
+```{r pop_collect_lyrics, eval=FALSE}
+
+pop_songs_with_lyrics <- pop_songs %>%
+  
+#Create simplified artist name
+#This improves Genius search matching
+#Find Genius page URL
+  mutate(
+    
+    main_artist =
+      str_split(
+        Artist,
+        ",|&|feat\\.|featuring"
+      ) %>%
+      map_chr(1),
+    
+    genius_url =
+      map2_chr(
+        main_artist,
+        Song,
+        pop_search_genius_url
+      )
+  )
+
+#Create empty vector to store lyrics
+pop_lyrics_list <- vector(
+  "character",
+  nrow(pop_songs_with_lyrics)
+)
+
+#Loop through songs one-by-one
+#More reliable than map()
+for (i in seq_len(nrow(pop_songs_with_lyrics))) {
+  
+  #Print progress in console
+  message(
+    "Pulling lyrics for song ",
+    i,
+    " of ",
+    nrow(pop_songs_with_lyrics),
+    ": ",
+    pop_songs_with_lyrics$Song[i]
+  )
+  
+  #Scrape lyrics
+  pop_lyrics_list[i] <-
+    pop_get_lyrics_from_url(
+      pop_songs_with_lyrics$genius_url[i]
+    )
+  
+  #Save lyrics into dataset
+  pop_songs_with_lyrics$lyrics <- pop_lyrics_list
+  
+  #Save progress file after EVERY song
+  #Prevents losing progress if code stops
+  write.csv(
+    pop_songs_with_lyrics,
+    "Pop_songs_with_lyrics_PROGRESS.csv",
+    row.names = FALSE
+  )
+}
+
+#Save final lyrics dataset
+write.csv(
+  pop_songs_with_lyrics,
+  "Pop_songs_with_lyrics.csv",
+  row.names = FALSE
+)
+
+#Count successful lyric pulls
+sum(!is.na(pop_songs_with_lyrics$lyrics))
+
+#Count failed lyric pulls
+sum(is.na(pop_songs_with_lyrics$lyrics))
+
+```
+
+# ===========================================================
+# 6: LOAD LYRICS DATASET
+# Purpose:
+# - Load dataset that already contains lyrics
+# Inputs:
+# - Pop_songs_with_lyrics.csv
+# Outputs:
+# - pop_songs_with_lyrics dataframe
+# ===========================================================
+
+```{r pop_lyrics_dataset, message=FALSE, warning=FALSE}
+
+#Read in New CSV
+pop_songs_with_lyrics <-read_csv("Pop_songs_with_lyrics.csv")
+
+head(pop_songs_with_lyrics)
+
+```
+
+# ===========================================================
+# 7: CLEAN LYRICS
+# Purpose:
+# - Remove Genius metadata
+# - Remove section labels
+# - Remove junk text
+# Inputs:
+# - Raw lyrics
+# Outputs:
+# - Cleaned lyrics
+# ===========================================================
+
+```{r pop_clean_lyrics}
+
+pop_clean_lyrics <- function(lyrics) {
+  
+  #Return NA if lyrics missing
+  if (is.na(lyrics) || lyrics == "")
+    return(NA_character_)
+  
+  #Common metadata words
+  metadata_words <- regex(
+    
+    "written|recorded|released|album|single|billboard|chart|song by|music video",
+    
+    ignore_case = TRUE
+  )
+  
+  pop_cleaned <- lyrics %>%
+    
+    #Remove Everything before "Read More" to get rid of captions
+    str_replace("^.*?Read More", "") %>%
+    #Remove text before "Lyrics"
+    str_replace("^.*?Lyrics", "") %>%
+    #Remove [Verse], [Chorus], etc.
+    str_replace_all("\\[.*?\\]", " ") %>%
+    #Remove contributor info
+    str_replace_all("\\d+ Contributors?", " ") %>%
+    #Remove "Embed"
+    str_replace_all("\\d*Embed$", " ") %>%
+    #Remove extra spaces
+    str_squish()
+  
+  #Remove leftover metadata sentences
+  for (i in 1:5) {
+    
+    first_sentence <-
+      str_extract(pop_cleaned, "^.*?\\.")
+    
+    if (!is.na(first_sentence) &&
+        str_detect(first_sentence,
+                   metadata_words)) {
+      
+      pop_cleaned <- pop_cleaned %>%
+        str_remove("^.*?\\.") %>%
+        str_squish()
+    }
+  }
+  
+  pop_cleaned
+}
+```
+
+# ===========================================================
+# 8: CLEAN POP DATASET
+# Purpose:
+# - Apply lyric cleaning
+# - Create word count variable
+# Inputs:
+# - pop_songs_with_lyrics dataframe
+# Outputs:
+# - pop_songs_clean dataframe
+# ===========================================================
+
+```{r pop_cleaned_dataset}
+
+#Preview cleaned dataset
+pop_songs_clean <- pop_songs_with_lyrics %>%
+  
+  #Clean lyrics
+  mutate(lyrics = map_chr(lyrics, pop_clean_lyrics)) %>%
+  
+  #Remove missing lyrics
+  filter(!is.na(lyrics), lyrics != "") %>%
+  
+  #Remove duplicate songs
+  distinct(Song, .keep_all = TRUE)
+
+#Save cleaned dataset
+write.csv(
+  pop_songs_clean,
+  "pop_songs_clean.csv",
+  row.names = FALSE
+)
+
+#Preview cleaned dataset
+head(pop_songs_clean)
+
+```
+
+# ===========================================================
+# 9: LOAD STOP WORDS
+# Purpose:
+# - Load common English stop words
+# - Remove words like: "the", "and", "is", "a"
+# Inputs:
+# - tidytext stop_words dataset
+# Outputs:
+# - stop_words dataframe
+# ===========================================================
+
+```{r pop_stop_words}
+
+#Load built-in stop words dataset
+data("stop_words")
+```
+
+# ===========================================================
+# 10: WORD REPETITION FUNCTION
+# Purpose:
+# - Measure how repetitive each pop song is
+# - Uses meaningful words only
+# Inputs:
+# - lyrics text
+# Outputs:
+# - repetition score
+# ===========================================================
+
+```{r pop_word_repetition}
+
+pop_word_repetition_score <- function(lyrics) {
+  
+  #Return NA if lyrics missing
+  if (is.na(lyrics) || lyrics == "")
+    return(NA_real_)
+
+  #Convert lyrics to lowercase
+  #Remove punctuation
+  #Split into words
+  pop_words <- lyrics %>%
+    
+    tolower() %>%
+    
+    str_replace_all("[^a-z0-9\\s']", " ") %>%
+    
+    str_split("\\s+") %>%
+    
+    unlist()
+
+  #Remove blank entries
+  pop_words <- pop_words[pop_words != ""]
+
+  #Remove stop words
+  pop_words <- pop_words[
+    !pop_words %in% stop_words$word
+  ]
+
+  #If no meaningful words remain
+  #return NA
+  if (length(pop_words) == 0)
+    return(NA_real_)
+
+  # Repetition score formula: 1 - (unique words / total words)
+  #Higher value = more repetition
+  1 - (length(unique(pop_words)) / length(pop_words))
+}
+```
+
+# ===========================================================
+# 11: WORD COUNT FUNCTION
+# Purpose:
+# - Count number of words in each pop song
+# Inputs:
+# - lyrics text
+# Outputs:
+# - total word count
+# ===========================================================
+
+```{r pop_word_count}
+
+pop_word_count <- function(lyrics) {
+  
+  #Return NA if lyrics missing
+  if (is.na(lyrics) || lyrics == "")
+    return(NA_real_)
+
+  #Clean and split lyrics into words
+  pop_words <- lyrics %>%
+    
+    tolower() %>%
+    
+    str_replace_all("[^a-z0-9\\s']", " ") %>%
+    
+    str_split("\\s+") %>%
+    
+    unlist()
+
+  # Remove blank words
+  pop_words <- pop_words[pop_words != ""]
+
+  # Return total number of words
+  length(pop_words)
+  
+  #Add word count variable to dataset
+pop_songs_clean <- pop_songs_clean %>%
+  
+  mutate(pop_number_of_words =
+           map_dbl(lyrics, pop_word_count))
+}
+```
+
+# ===========================================================
+# 12: ADD WORD REPETITION TO DATASET
+# Purpose:
+# - Calculate repetition score for each pop song
+# Inputs:
+# - pop_songs_clean dataframe
+# Outputs:
+# - Updated dataframe with: pop_word_repeat_score
+# ===========================================================
+
+```{r pop_updated_datset}
+
+pop_songs_clean <- pop_songs_clean %>%
+  
+  #Calculate repetition score
+  mutate(pop_word_repeat_score = map_dbl(lyrics, pop_word_repetition_score))
+
+#Preview results
+pop_songs_clean %>%
+  select(Song, pop_word_repeat_score) %>%
+  
+  head()
+```
+
+# ===========================================================
+# 13: TITLE REPETITION FUNCTION
+# Purpose:
+# - Count how often song title appears in lyrics
+# Inputs:
+# - song title
+# - lyrics text
+# Outputs:
+# - title repetition count
+# ===========================================================
+
+```{r pop_title_repetition}
+
+pop_title_repetition_score <- function(pop_title, pop_lyrics) {
+  
+  #Return NA if title or lyrics missing
+  if (is.na(pop_title) ||
+      is.na(pop_lyrics) ||
+      pop_lyrics == "")
+    
+    return(NA_real_)
+
+  #Clean title text
+  pop_title_clean <- pop_title %>%
+    
+    tolower() %>%
+    
+    str_replace_all("[^a-z0-9\\s']", " ") %>%
+    
+    str_squish()
+
+  #Clean lyrics text
+  pop_lyrics_clean <- pop_lyrics %>%
+    
+    tolower() %>%
+    
+    str_replace_all("[^a-z0-9\\s']", " ") %>%
+    
+    str_squish()
+
+  #Count how many times title appears
+  str_count(pop_lyrics_clean, fixed(pop_title_clean))
+}
+```
+
+# ===========================================================
+# 14: ADD TITLE REPETITION TO DATASET
+# Purpose:
+# - Calculate title repetition score
+# Inputs:
+# - pop_songs_clean dataframe
+# Outputs:
+# - Updated dataframe with: pop_title_repeat_score
+# ===========================================================
+
+```{r pop_updated_dataset}
+
+pop_songs_clean <- pop_songs_clean %>%
+  
+  #Calculate title repetition count
+  mutate(pop_title_repeat_score = map2_dbl(
+        Song, lyrics, pop_title_repetition_score))
+
+#Preview results
+pop_songs_clean %>%
+  
+  select(Song, pop_title_repeat_score) %>%
+  
+  head()
+```
+
+# ===========================================================
+# 15: YEARLY SUMMARY
+# Purpose:
+# - Calculate yearly averages
+# Inputs:
+# - repetition variables
+# Outputs:
+# - pop_year_summary dataframe
+# ===========================================================
+
+```{r pop_yearly_summary}
+
+pop_year_summary <- pop_songs_clean %>%
+  
+  group_by(Year) %>%
+  
+  #Average word repetition score
+  summarise(pop_avg_word_repeat = mean(pop_word_repeat_score, na.rm = TRUE),
+    
+    #Average title repetition count
+    pop_avg_title_repeat = mean(
+      pop_title_repeat_score, na.rm = TRUE), .groups = "drop") %>%
+  
+  #Remove invalid rows
+  filter(!is.na(pop_avg_word_repeat), !is.nan(pop_avg_word_repeat))
+
+#Preview summary
+pop_year_summary
+```
+
+# ===========================================================
+# 16: WORD REPETITION PLOT
+# Purpose:
+# - Visualize repetition trends over time
+# Inputs:
+# - pop_year_summary dataframe
+# Outputs:
+# - line graph
+# ===========================================================
+
+```{r pop_word_repetition_plot, warning=FALSE, message=FALSE}
+
+ggplot(pop_year_summary, aes(
+  x = Year, y = pop_avg_word_repeat)) +
+  
+  #Trend line
+  geom_line(linewidth = 1) +
+  
+  #Data points
+  geom_point(size = 2) +
+  
+  #Smooth trend line
+  geom_smooth(color = "blue", se = FALSE, linetype = "dashed") +
+  
+  #Clean theme
+  theme_minimal() +
+  
+  #Improve readability
+  theme(plot.title = element_text(
+      size = 16, face = "bold", hjust = 0.5),
+    
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)) +
+  
+  labs(title =
+      "Word Repetition in Pop Songs Over Time (2006–2025)",
+      subtitle =
+      "Average repetition score per year",
+      x = "Year", y = "Repetition Score")
+```
+
+The results show how repetitive pop song lyrics are over time. Higher repetition scores indicate that songs reuse meaningful words more frequently throughout the lyrics. The trend line helps show whether repetition is increasing or decreasing across years. Changes in repetition may reflect shifts in songwriting style, choruses, or lyrical simplicity in pop music. The repetitiveness of pop songs seems to hit its peak in the year 2014, then gradually decrease with 2025 being one of the lowest repetition scores.
+
+# ===========================================================
+# 17: TITLE REPETITION PLOT
+# Purpose:
+# - Visualize title repetition trends
+# Inputs:
+# - pop_year_summary dataframe
+# Outputs:
+# - line graph
+# ===========================================================
+
+```{r , warning=FALSE, message=FALSE}
+
+ggplot(pop_year_summary, aes(x = Year, y = pop_avg_title_repeat)) +
+  
+  #Main line
+  geom_line(linewidth = 1) +
+  
+  #Points
+  geom_point(size = 2) +
+  
+  #Smooth trend line
+  geom_smooth(color = "blue", se = FALSE, linetype = "dashed") +
+  
+  #Minimal theme
+  theme_minimal() +
+  
+  #Better readability
+  theme(plot.title = element_text(
+      size = 16, face = "bold", hjust = 0.5),
+    
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)) +
+  
+  labs(title =
+      "Title Repetition in Pop Songs Over Time (2006–2025)",
+      subtitle =
+      "Average number of times song titles appear in lyrics",
+      x = "Year", y = "Average Title Repetitions")
+```
+
+The title repetition results show how often pop songs repeat their titles within the lyrics. Songs with highly repetitive choruses or hooks often repeat the title many times. This graph helps identify whether title repetition has become more common in modern pop music. For pop music, it looks like the title repetition has gone down over the more recent years. 
+
+
+# ===========================================================
+# 18: TOP WORDS OVERALL
+# Purpose:
+# - Find most common meaningful words
+# - Remove filler/interjection words
+# Inputs:
+# - pop_songs_clean dataframe
+# Outputs:
+# - pop_top_words dataframe
+# ===========================================================
+
+```{r pop_top_words, message=FALSE, warning=FALSE}
+
+#Words to Remove from analysis
+pop_filler_words <- c(
+  "ayy", "ay", "uh", "ah", "ha", "hah",
+  "woo", "woah", "whoa", "la", "doh",
+  "mm", "mmm", "hmm", "ohh", "yah",
+  "ya", "eh", "ow", "hey", "yo", "em", "da"
+)
+
+pop_top_words <- pop_songs_clean %>%
+  
+  #Split lyrics into individual words
+  unnest_tokens(word, lyrics) %>%
+  
+  #Remove standard stop words
+  anti_join(stop_words, by = "word") %>%
+  
+  #Remove filler/interjection words
+  filter(!word %in% pop_filler_words) %>%
+  
+  #Count remaining words
+  count(word, sort = TRUE)
+
+#View top 20 words
+pop_top_words %>%
+  head(20)
+```
+
+# ===========================================================
+# 19: MOST REPETITIVE POP SONGS
+# Purpose:
+# - Find songs with highest repetition scores
+# Inputs:
+# - pop_songs_clean dataframe
+# Outputs:
+# - table of repetitive songs
+# ===========================================================
+
+```{r pop_most_repetitive}
+
+pop_songs_clean %>%
+  
+  arrange(desc(pop_word_repeat_score)) %>%
+  
+  select(Song, Artist, pop_word_repeat_score) %>%
+  
+  head(10)
+```
+
