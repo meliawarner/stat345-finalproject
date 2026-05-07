@@ -405,9 +405,9 @@ write.csv(rap_songs, "rap_songs_final.csv", row.names = FALSE)
 ## Summarize repetition by year
 # Purpose: Calculate average repetition scores for each year
 # Inputs: rap_songs dataframe with repetition score columns
-# Outputs: year_summary dataframe for plotting trends over time
+# Outputs: rap_year_summary dataframe for plotting trends over time
 
-year_summary <- rap_songs %>%
+rap_year_summary <- rap_songs %>%
   group_by(year) %>%
   summarise(
     # Average word repetition score per year
@@ -428,21 +428,23 @@ year_summary <- rap_songs %>%
 ```{r rap_word_repetition_plot, warning=FALSE, message=FALSE}
 ## Plot word repetition over time
 # Purpose: Visualize how average word repetition changes by year
-# Inputs: year_summary dataframe
+# Inputs: rap_year_summary dataframe
 # Outputs: Line plot of average word repetition over time
 
-ggplot(year_summary, aes(x = year, y = avg_word_repeat)) +
+ggplot(rap_year_summary, aes(x = year, y = avg_word_repeat)) +
   geom_line(size = 1) +
   geom_point(size = 2) +
   geom_smooth(color = "red", se = FALSE, linetype = "dashed") +
   theme_minimal() +
   labs(
-    title = "Word Repetition (Stopwords Removed) in Rap Songs Over Time (2006-2026)",
+    title = "Word Repetition (Stopwords Removed) in Rap Songs Over Time (2006-2025)",
     x = "Year",
     y = "Repetition Score"
   )
 
 ```
+
+The results show a general decrease in word repetition in rap songs over time. Earlier years in the dataset tended to have higher repetition scores, while more recent songs generally reused words less frequently. Although there is still some variation between individual years, the overall trend suggests that rap music may be shifting toward less repetitive lyrical structures and a greater variety of words within songs. Some temporary increases in repetition still occurred during the middle years of the dataset, but repetition levels declined overall in the later years of the study.
 
 
 ## Title Repetition Plot
@@ -450,20 +452,22 @@ ggplot(year_summary, aes(x = year, y = avg_word_repeat)) +
 ```{r rap_title_repetition_plot, warning=FALSE, message=FALSE}
 ## Plot title repetition over time
 # Purpose: Visualize how often song titles are repeated in lyrics by year
-# Inputs: year_summary dataframe
+# Inputs: rap_year_summary dataframe
 # Outputs: Line plot of average title repetition over time
 
-ggplot(year_summary, aes(x = year, y = avg_title_repeat)) +
+ggplot(rap_year_summary, aes(x = year, y = avg_title_repeat)) +
   geom_line(size = 1) +
   geom_point(size = 2) +
   geom_smooth(color = "red", se = FALSE, linetype = "dashed") +
   theme_minimal() +
   labs(
-    title = "Title Repetition in Rap Songs Over Time (2006-2026)",
+    title = "Title Repetition in Rap Songs Over Time (2006-2025)",
     x = "Year",
     y = "Average Number of Title Repetitions"
   )
 ```
+
+The title repetition results for rap music show an overall downward trend between 2006 and 2025, although the pattern is more variable than the overall word repetition results. Earlier years generally had higher average title repetition, while more recent years tended to repeat song titles less frequently. However, several noticeable spikes still occurred in certain years, suggesting that some rap songs continued to rely heavily on repeated hooks and choruses. Overall, the results suggest that while modern rap songs may still use repetition, they appear to rely less on repeatedly using the song title throughout the lyrics than earlier rap songs did.
 
 
 ## Most Repetitive Rap Songs
@@ -508,9 +512,6 @@ top_words <- rap_songs %>%
   
   # Remove common stop words (e.g., "the", "and", "to")
   anti_join(stop_words, by = "word") %>%
-  
-  # Remove offensive word from results
-  filter(word != "nigga", word != "niggas") %>%
   
   # Count how often each word appears and sort from most to least frequent
   count(word, sort = TRUE)
@@ -1092,13 +1093,14 @@ ggplot(country_year_summary, aes(x = year, y = avg_word_repeat)) +
   ) +
   
   labs(
-    title = "Word Repetition in Country Songs Over Time (2006–2026)",
+    title = "Word Repetition in Country Songs Over Time (2006–2025)",
     subtitle = "Average repetition score per year (stopwords removed)",
     x = "Year",
     y = "Repetition Score"
   )
 
 ```
+
 The results show a general increase in word repetition in country songs over time. From 2006 to around 2020, repetition scores steadily rise, indicating that more recent songs tend to reuse words more frequently. This suggests a shift toward more repetitive lyrical structures, such as stronger emphasis on choruses or hooks. Although there is some variation across individual years, the overall upward trend is clear. After 2020, repetition appears to level off slightly, which may indicate that repetition has reached a plateau in more recent country music.
 
 
@@ -1132,7 +1134,7 @@ ggplot(country_year_summary, aes(x = year, y = avg_title_repeat)) +
   ) +
   
   labs(
-    title = "Title Repetition in Country Songs Over Time (2006–2026)",
+    title = "Title Repetition in Country Songs Over Time (2006–2025)",
     subtitle = "Average number of times the song title appears in lyrics",
     x = "Year",
     y = "Average Title Repetitions"
@@ -1142,9 +1144,8 @@ ggplot(country_year_summary, aes(x = year, y = avg_title_repeat)) +
 
 The title repetition results show a more variable pattern compared to overall word repetition. While there are noticeable spikes in certain years, there is no clear long-term upward or downward trend. This suggests that although country songs may be becoming more repetitive overall, they are not necessarily repeating the song title more frequently. Instead, title repetition appears to fluctuate depending on the style of songs that are popular in a given year.
 
-## Extras
 
-## Top words overall
+## Top Words Overall
 
 ```{r country_top_words_overall, message=FALSE, warning=FALSE}
 ## Find most common country words
@@ -1178,3 +1179,118 @@ country_songs_clean %>%
 ```
 
 
+
+--------------------------------
+
+### Comparison Graphs
+
+## Which Genre is More Repetitive Over Time?
+
+```{r more_repetitive_genre, warning=FALSE, message=FALSE}
+## Compare average word repetition by genre over time
+# Purpose: Compare average word repetition across genres by year
+# Inputs:  rap_songs, country_songs_clean, pop_songs_?????????
+# Outputs: Multi-line plot with trend lines
+
+# Add genre labels and combine datasets
+combined_repetition <- bind_rows(
+  
+  rap_songs %>%
+    mutate(genre = "Rap") %>%
+    group_by(year, genre) %>%
+    summarise(
+      avg_word_repeat = mean(word_repeat_score, na.rm = TRUE),
+      .groups = "drop"
+    ),
+  
+  country_songs_clean %>%
+    mutate(genre = "Country") %>%
+    group_by(year, genre) %>%
+    summarise(
+      avg_word_repeat = mean(word_repeat_score, na.rm = TRUE),
+      .groups = "drop"
+    )
+)
+
+# Plot comparison
+ggplot(combined_repetition,
+       aes(x = year,
+           y = avg_word_repeat,
+           color = genre)) +
+  
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  
+  # Dashed trend lines
+  geom_smooth(se = FALSE, linetype = "dashed") +
+  
+  scale_color_manual(values = c(
+  "Rap" = "red",
+  "Country" = "blue"
+)) +
+  
+  theme_minimal() +
+  
+  labs(
+    title = "Word Repetition by Genre Over Time",
+    x = "Year",
+    y = "Average Word Repetition Score",
+    color = "Genre"
+  )
+```
+
+
+## Which Genre Tends to Have Longer Lyrics Over Time?
+
+```{r longer_lyrics, warning=FALSE, message=FALSE}
+## Genre lyric length comparison over time
+# Purpose: Compare average lyric length across genres by year
+# Inputs: rap_songs, country_songs_clean, pop_songs_??????
+# Outputs: Multi-line plot with trend lines
+
+# Add genre labels and combine datasets
+combined_length <- bind_rows(
+  
+  rap_songs %>%
+    mutate(genre = "Rap") %>%
+    group_by(year, genre) %>%
+    summarise(
+      avg_words = mean(number_of_words, na.rm = TRUE),
+      .groups = "drop"
+    ),
+  
+  country_songs_clean %>%
+    mutate(genre = "Country") %>%
+    group_by(year, genre) %>%
+    summarise(
+      avg_words = mean(number_of_words, na.rm = TRUE),
+      .groups = "drop"
+    )
+)
+
+# Plot comparison
+ggplot(combined_length,
+       aes(x = year,
+           y = avg_words,
+           color = genre)) +
+  
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  
+  # Dashed trend lines
+  geom_smooth(se = FALSE, linetype = "dashed") +
+  
+  scale_color_manual(values = c(
+  "Rap" = "red",
+  "Country" = "blue"
+)) +
+  
+  theme_minimal() +
+  
+  labs(
+    title = "Average Lyric Length by Genre Over Time",
+    x = "Year",
+    y = "Average Number of Words",
+    color = "Genre"
+  )
+```
